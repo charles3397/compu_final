@@ -5,10 +5,15 @@ import threading
 import time
 import random
 import multiprocessing
+import os
+
+FAN = 1
 
 lugares_bote = []
 viajes = 0
-nb_places = threading.Semaphore(4)
+nb_places = threading.BoundedSemaphore(4)
+SEMAPHORE = 4
+condition = threading.Event()
 
 
 def check_PSG_OM_in_bote(liste):
@@ -26,8 +31,9 @@ def check_PSG_OM_in_bote(liste):
 
 
 def a_bordo():
-	global lugares_bote
+	global lugares_bote, SEMAPHORE
 	nb_places.acquire()
+	SEMAPHORE -= 1
 	if len(lugares_bote) == 4:
 		a_remar()
 
@@ -35,36 +41,45 @@ def a_bordo():
 def a_remar():
 	global lugares_bote
 	global viajes
+	global nb_places, SEMAPHORE
 	print "soy el capitan del viaje ",viajes," y me voy con mi embarcacion y tres companeros\n"
 	lugares_bote = []
 	nb_places.release()
 	viajes += 1
-	for i in range(4):
-		nb_places.release()
+	nb_places = threading.BoundedSemaphore(4)
+	SEMAPHORE = 4
+	condition.set()
 	
 
 def entrar_validation(hincha):
 	global lugares_bote
+	global FAN, SEMAPHORE
+	FAN += 1
+	fan = FAN
 	if hincha == "PSG":
 		while 1 :	
 			boat = check_PSG_OM_in_bote(lugares_bote)
 			if boat == [2,1]  or boat == [0,3] :
-				print "Oh no puedo entrar !!!!"
-				break
+				print "Oh no puedo entrar, espero !!!!",fan
+				condition.wait()
+				condition.clear()
 			else :
 				lugares_bote.append("PSG")
-				print "Ici c'est Paris !Vamos PSG !",lugares_bote
+				print "Ici c'est Paris !Vamos PSG !",lugares_bote ,fan," ",SEMAPHORE
 				a_bordo()
 				break
 	elif hincha == "OM":
 		while 1 :
 			boat = check_PSG_OM_in_bote(lugares_bote)
 			if boat == [1,2]  or boat == [3,0] :
-				print "Oh no puedo entrar !!!!"
+				print "Oh no puedo entrar,espero !!!!",fan
+				condition.wait()
+				condition.clear()
 			else :
 				lugares_bote.append("OM")
-				print "Droit au But!Vamos OM !", lugares_bote
+				print "Droit au But!Vamos OM !", lugares_bote,fan," ",SEMAPHORE
 				a_bordo()
+				break
 	else :
 		print "Ninguna hincha quiere ver la partida ?"
 	
@@ -73,7 +88,7 @@ def entrar_validation(hincha):
 def Hinchada_PSG():
     	""" Generacion de hinchas de PSG"""
 	while 1:
-	        time.sleep(random.randrange(0, 2))
+	        time.sleep(random.randrange(1, 5))
         	mq.put("PSG")
 		if quit.get() == True :
 			break 
@@ -82,7 +97,7 @@ def Hinchada_PSG():
 def Hinchada_OM():
 	""" Generacion de hinchas de OM"""
 	while 1:
-	        time.sleep(random.randrange(0, 2))
+	        time.sleep(random.randrange(1, 5))
 	        mq.put("OM")
 		if quit.get() == True :
 			break
@@ -90,14 +105,16 @@ def Hinchada_OM():
 	
 def Coordinador():
 	global viajes 
+	threads = []
 	while viajes < 20:
 		quit.put(False)
 		quit.put(False)
 		hincha = mq.get()
 		print hincha
-		t = threading.Thread(target = entrar_validation, args = (hincha,))
-		t.start()
-		t.join()
+		threads.append(threading.Thread(target = entrar_validation, args = (hincha,)))
+		threads[len(threads) - 1].start()
+	for i in range(len(threads)):
+		threads[i].join()
 	quit.put(True)
 	quit.put(True)
 		
